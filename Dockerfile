@@ -13,10 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source code
 COPY . .
 
-# Docker seviyesinde doğrudan 8000 portunu zorlayan sağlık kontrolü
+# Docker seviyesinde doğrudan 3000 portunu zorlayan sağlık kontrolü
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://127.0.0.1:8000/ || exit 1
+  CMD curl -f http://127.0.0.1:3000/ || exit 1
 
-EXPOSE 8000
+EXPOSE 3000
 # Command to use by default in Coolify or Docker
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3000"]
