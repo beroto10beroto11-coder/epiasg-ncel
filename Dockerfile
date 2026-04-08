@@ -18,7 +18,5 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -f http://127.0.0.1:8000/ || exit 1
 
 EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-
 # Command to use by default in Coolify or Docker
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
