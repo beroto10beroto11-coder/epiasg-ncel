@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-requests
+httpx
 pandas
 openpyxl
 python-multipart
