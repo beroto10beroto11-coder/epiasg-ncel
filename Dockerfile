@@ -17,10 +17,7 @@ COPY . .
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -f http://127.0.0.1:8000/ || exit 1
 
-# Traefik'in aklını karıştırmaması için Zorunlu Labeller
-LABEL traefik.enable="true"
-LABEL traefik.http.routers.epias_manuel.rule="Host(`epias.theturksoft.site`)"
-LABEL traefik.http.services.epias_manuel.loadbalancer.server.port="8000"
+
 
 EXPOSE 8000
 # Command to use by default in Coolify or Docker
