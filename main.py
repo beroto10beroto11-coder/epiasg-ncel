@@ -485,6 +485,25 @@ def start_kgup(background_tasks: BackgroundTasks):
 
 @app.post("/api/gop-eslesme/start")
 def start_gop_eslesme(req: GopEslesmeRequest, background_tasks: BackgroundTasks):
+    # Tarih kontrolü - gelecek tarihler kabul edilmez
+    bugun = datetime.now().date()
+    try:
+        start_dt = datetime.strptime(req.start_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(req.end_date, "%Y-%m-%d").date()
+        
+        if start_dt >= bugun:
+            raise HTTPException(
+                status_code=400, 
+                detail="Başlangıç tarihi bugünden önce olmalıdır. Gelecek tarihler seçilemez."
+            )
+        if end_dt >= bugun:
+            raise HTTPException(
+                status_code=400, 
+                detail="Bitiş tarihi bugünden önce olmalıdır. Gelecek tarihler seçilemez."
+            )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz tarih formatı. YYYY-MM-DD formatında giriniz.")
+    
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "queued", "message": "Kuyruğa alındı", "progress": 0, "file": None}
     background_tasks.add_task(run_gop_eslesme, job_id, req.start_date, req.end_date)
