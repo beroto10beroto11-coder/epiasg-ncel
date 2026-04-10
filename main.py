@@ -48,7 +48,7 @@ KGUP_GRUP_HARITASI = {
     "İSKEN":        ["İSKENDERUN İTHAL KÖMÜR SANTRALI-2", "İSKENDERUN İTHAL KÖMÜR SANTRALI-1"],
     "CENAL":        ["CENAL TES(TR1+TRA)", "CENAL TES(TR2)"],
     "EMBA":         ["HUNUTLU TES_TR1", "HUNUTLU TES_TR2"],
-    "ATLAS":        ["ATLAS TES"],
+    "ATLAS":        ["ATLAS TES-A","ATLAS TES-B"],
     "EREN":         ["ZETES 1", "ZETES 2-A", "ZETES 2-B", "ZETES 3-A", "ZETES 3-B"],
     "AKSA ANTALYA": ["ANTALYA ENERJİ SANTRALİ(Doğalgaz)"],
     "EGEMER":       ["Erzin Santrali"],
