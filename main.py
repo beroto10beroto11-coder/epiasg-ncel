@@ -278,7 +278,7 @@ def parse_gip(items: list) -> pd.DataFrame:
             continue
         bid = pd.to_numeric(item.get("clearingQuantityBid", 0), errors="coerce") or 0
         ask = pd.to_numeric(item.get("clearingQuantityAsk", 0), errors="coerce") or 0
-        rows.append({"Tarih": tarih, "Saat": saat, "GİP Eşleşme (MWh)": bid - ask})
+        rows.append({"Tarih": tarih, "Saat": saat, "GİP Eşleşme (MWh)": ask - bid})
 
     if not rows:
         return pd.DataFrame(columns=["Tarih", "Saat", "GİP Eşleşme (MWh)"])
