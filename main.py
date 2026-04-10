@@ -192,10 +192,11 @@ async def process_kgup_async(job_id: str):
 
     update_job(job_id, "running", "Excel oluşturuluyor...", 85)
     df = pd.DataFrame(final_veriler)
+    df["Tarih"] = dates["tomorrow_str"]
     df["toplam"] = pd.to_numeric(df["toplam"]).fillna(0)
 
-    pivot_detay = df.pivot_table(index="time", columns="uevcbName", values="toplam",
-                                  aggfunc="sum", fill_value=0).sort_index()
+    pivot_detay = df.pivot_table(index=["Tarih", "time"], columns="uevcbName", values="toplam",
+                              aggfunc="sum", fill_value=0).sort_index()
     pivot_ozet = pd.DataFrame(index=pivot_detay.index)
     for grup, liste in KGUP_GRUP_HARITASI.items():
         cols = [c for c in liste if c in pivot_detay.columns]
