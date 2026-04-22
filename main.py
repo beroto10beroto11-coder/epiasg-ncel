@@ -679,7 +679,7 @@ async def process_gop_eslesme_async(job_id: str, start_date: str, end_date: str)
                  # Satış değerini negatif yapıyoruz
                  neg_val = -abs(val) if val != 0 else 0
                  c.value = neg_val 
-                 c.number_format = '-0.00;+0.00;0.00' # Negatif formatı öncelikli
+                 c.number_format = '#,##0.00;[Red]-#,##0.00' # Negatif formatı öncelikli
         
                  if neg_val < 0:
                     c.font = font_red
