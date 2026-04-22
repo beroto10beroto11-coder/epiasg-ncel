@@ -35,6 +35,7 @@ URL_UEVCB       = "https://seffaflik.epias.com.tr/electricity-service/v1/generat
 URL_KGUP        = "https://seffaflik.epias.com.tr/electricity-service/v1/generation/data/dpp-bulk"
 URL_GOP_ESLESME = "https://seffaflik.epias.com.tr/electricity-service/v1/markets/dam/data/clearing-quantity"
 URL_GIP_ESLESME = "https://seffaflik.epias.com.tr/electricity-service/v1/markets/idm/data/matching-quantity"
+URL_PTF         = "https://seffaflik.epias.com.tr/electricity-service/v1/markets/dam/data/mcp"
 
 KGUP_GRUP_HARITASI = {
     "İzmir":        ["İZMİR DGKÇS_GR1(Doğalgaz)", "İZMİR DGKÇS_GR2(Doğalgaz)"],
@@ -65,6 +66,10 @@ GOP_ORGANIZASYONLAR = [
     {"organizationId": 100200, "shortName": "ALTAİR"},
     {"organizationId": 20300,  "shortName": "RKARE"},
     {"organizationId": 15220,  "shortName": "NEXUS"},
+    {"organizationId": 100760, "shortName": "SKYPOWER"},
+    {"organizationId": 9968,"shortName": "PURE ENER."},
+    {"organizationId": 100040,"shortName": "BIGPRO"},
+    {"organizationId": 18419,"shortName": "WHITEROCK"  }
 ]
 
 OUTPUT_DIR = "outputs"
@@ -257,11 +262,11 @@ def parse_gop(items: list) -> pd.DataFrame:
 
 
 def parse_gip(items: list) -> pd.DataFrame:
-    """GİP items → (Tarih, Saat) indexli GİP Eşleşme sütunu.
+    """GİP items → (Tarih, Saat) indexli 3 sütun: Net Eşleşme, Alış, Satış.
     kontratAdi örnek: 'PH26040300'  → tarih=2026-04-03, saat=00:00
     """
     if not items:
-        return pd.DataFrame(columns=["Tarih", "Saat", "GİP Eşleşme (MWh)"])
+        return pd.DataFrame(columns=["Tarih", "Saat", "GİP Eşleşme (MWh)", "GİP Alış (MWh)", "GİP Satış (MWh)"])
 
     rows = []
     for item in items:
@@ -279,15 +284,45 @@ def parse_gip(items: list) -> pd.DataFrame:
             continue
         bid = pd.to_numeric(item.get("clearingQuantityBid", 0), errors="coerce") or 0
         ask = pd.to_numeric(item.get("clearingQuantityAsk", 0), errors="coerce") or 0
-        rows.append({"Tarih": tarih, "Saat": saat, "GİP Eşleşme (MWh)": ask - bid})
+        rows.append({
+            "Tarih": tarih, 
+            "Saat": saat, 
+            "GİP Eşleşme (MWh)": ask - bid,
+            "GİP Alış (MWh)": bid,
+            "GİP Satış (MWh)": ask
+        })
 
     if not rows:
-        return pd.DataFrame(columns=["Tarih", "Saat", "GİP Eşleşme (MWh)"])
+        return pd.DataFrame(columns=["Tarih", "Saat", "GİP Eşleşme (MWh)", "GİP Alış (MWh)", "GİP Satış (MWh)"])
 
     df = pd.DataFrame(rows)
     # Aynı tarih+saat'te birden fazla kontrat olabilir → topla
-    df = df.groupby(["Tarih", "Saat"], as_index=False)["GİP Eşleşme (MWh)"].sum()
+    df = df.groupby(["Tarih", "Saat"], as_index=False)[["GİP Eşleşme (MWh)", "GİP Alış (MWh)", "GİP Satış (MWh)"]].sum()
     return df
+
+
+def parse_ptf(items: list) -> pd.DataFrame:
+    """PTF items → (Tarih, Saat) indexli PTF sütunu."""
+    if not items:
+        return pd.DataFrame(columns=["Tarih", "Saat", "PTF (TL/MWh)"])
+    
+    rows = []
+    for item in items:
+        try:
+            date_str = item.get("date", "")
+            # date formatı: "2024-01-01T00:00:00+03:00" gibi
+            dt = pd.to_datetime(date_str)
+            tarih = dt.strftime("%Y-%m-%d")
+            saat = dt.strftime("%H:%M")
+            price = pd.to_numeric(item.get("price", 0), errors="coerce") or 0
+            rows.append({"Tarih": tarih, "Saat": saat, "PTF (TL/MWh)": price})
+        except:
+            continue
+    
+    if not rows:
+        return pd.DataFrame(columns=["Tarih", "Saat", "PTF (TL/MWh)"])
+    
+    return pd.DataFrame(rows)
 
 
 async def process_gop_eslesme_async(job_id: str, start_date: str, end_date: str):
@@ -302,6 +337,20 @@ async def process_gop_eslesme_async(job_id: str, start_date: str, end_date: str)
 
         hdrs         = api_headers(tgt)
         org_verileri = {}   # shortName → {"gop": df, "gip": df, "has_data": bool}
+
+        # PTF verilerini çek (tüm organizasyonlar için ortak)
+        update_job(job_id, "running", "PTF verileri çekiliyor...", 8)
+        ptf_payload = {
+            "startDate": f"{start_date}T00:00:00+03:00",
+            "endDate": f"{end_date}T00:00:00+03:00",
+        }
+        try:
+            ptf_items = await fetch_with_retry(client, URL_PTF, hdrs, ptf_payload)
+            df_ptf = parse_ptf(ptf_items)
+        except Exception as e:
+            if "TGT_EXPIRED" in str(e):
+                update_job(job_id, "error", "TGT süresi doldu."); return
+            df_ptf = pd.DataFrame(columns=["Tarih", "Saat", "PTF (TL/MWh)"])
 
         for idx, org in enumerate(GOP_ORGANIZASYONLAR):
             org_id = org["organizationId"]
@@ -339,6 +388,12 @@ async def process_gop_eslesme_async(job_id: str, start_date: str, end_date: str)
             if not df.empty and "Tarih" in df.columns and "Saat" in df.columns:
                 for _, row in df.iterrows():
                     all_keys.add((row["Tarih"], row["Saat"]))
+    
+    # PTF verilerinden de tarih+saat ekle
+    if not df_ptf.empty and "Tarih" in df_ptf.columns and "Saat" in df_ptf.columns:
+        for _, row in df_ptf.iterrows():
+            all_keys.add((row["Tarih"], row["Saat"]))
+    
     all_keys = sorted(all_keys)
 
     file_name = f"Genel_Eslesme_{start_date}_{end_date}_{job_id[:8]}.xlsx"
@@ -346,6 +401,10 @@ async def process_gop_eslesme_async(job_id: str, start_date: str, end_date: str)
 
     from openpyxl import Workbook
     wb = Workbook()
+    
+    # ==========================================
+    # SHEET 1: Genel Eşleşme (Mevcut format)
+    # ==========================================
     ws = wb.active
     ws.title = "Genel Eşleşme"
 
@@ -460,6 +519,186 @@ async def process_gop_eslesme_async(job_id: str, start_date: str, end_date: str)
         ws.column_dimensions[get_column_letter(4 + i * 2)].width = 22
 
     ws.freeze_panes = "C3"
+
+    # ==========================================
+    # SHEET 2: Özet (Detaylı format - PTF + Ayrı GİP)
+    # ==========================================
+    ws_ozet = wb.create_sheet("Özet")
+    
+    # PTF lookup
+    ptf_lookup = make_lookup(df_ptf, "PTF (TL/MWh)")
+    
+    # GİP için ayrı lookup'lar
+    org_gip_lookups = {
+        short: {
+            "alis": make_lookup(v["gip"], "GİP Alış (MWh)"),
+            "satis": make_lookup(v["gip"], "GİP Satış (MWh)"),
+        }
+        for short, v in org_verileri.items()
+    }
+    
+    # ── SATIR 1: Org başlıkları ──
+    ws_ozet.row_dimensions[1].height = 32
+    ws_ozet.merge_cells("A1:C1")
+    ws_ozet["A1"].fill = fill_title
+    ws_ozet["A1"].border = border
+    
+    for i, short in enumerate(orgs):
+        # Her org için 3 sütun: GÖP, GİP Alış, GİP Satış
+        cs = get_column_letter(4 + i * 3)
+        ce = get_column_letter(6 + i * 3)
+        ws_ozet.merge_cells(f"{cs}1:{ce}1")
+        c = ws_ozet[f"{cs}1"]
+        c.value = short
+        c.font = Font(name="Calibri", bold=True, size=16, color="00E5FF")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.fill = fill_title
+        c.border = border
+    
+    # ── SATIR 2: Sütun başlıkları ──
+    ws_ozet.row_dimensions[2].height = 20
+    for col, txt in [(1, "Tarih"), (2, "Saat"), (3, "PTF (TL/MWh)")]:
+        c = ws_ozet.cell(row=2, column=col)
+        c.value = txt
+        c.font = font_header
+        c.fill = fill_head
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = border
+    
+    for i in range(n_orgs):
+        for offset, label in [(0, "GÖP Eşleşme (MWh)"), (1, "GİP Alış (MWh)"), (2, "GİP Satış (MWh)")]:
+            c = ws_ozet.cell(row=2, column=4 + i * 3 + offset)
+            c.value = label
+            c.font = font_header
+            c.fill = fill_head
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = border
+    
+    # ── SATIRLAR 3+: Veri ──
+    for row_idx, (tarih, saat) in enumerate(all_keys, start=3):
+        ws_ozet.row_dimensions[row_idx].height = 16
+        
+        # Tarih, Saat
+        for col, val in [(1, tarih), (2, saat)]:
+            c = ws_ozet.cell(row=row_idx, column=col, value=val)
+            c.font = font_normal
+            c.fill = fill_dark
+            c.alignment = Alignment(horizontal="center")
+            c.border = border
+        
+        # PTF
+        c = ws_ozet.cell(row=row_idx, column=3)
+        c.alignment = Alignment(horizontal="center")
+        c.border = border
+        ptf_val = ptf_lookup.get((tarih, saat), None)
+        if ptf_val is None:
+            c.value = "Veri Yok"
+            c.font = font_empty
+            c.fill = fill_empty
+        else:
+            c.value = ptf_val
+            c.number_format = '0.00'
+            c.font = font_normal
+            c.fill = fill_dark
+        
+        # Her organizasyon için GÖP, GİP Alış, GİP Satış
+        for i, short in enumerate(orgs):
+            lk = org_lookups[short]
+            gip_lk = org_gip_lookups[short]
+            
+            # GÖP Eşleşme
+            c = ws_ozet.cell(row=row_idx, column=4 + i * 3)
+            c.alignment = Alignment(horizontal="center")
+            c.border = border
+            
+            if not lk["has_data"]:
+                c.value = "Veri Yok"
+                c.font = font_empty
+                c.fill = fill_empty
+            else:
+                val = lk["gop"].get((tarih, saat), None)
+                if val is None:
+                    c.value = "Veri Yok"
+                    c.font = font_empty
+                    c.fill = fill_empty
+                else:
+                    c.value = val
+                    c.number_format = '+0.00;-0.00;0.00'
+                    if val > 0:
+                        c.font = font_green
+                        c.fill = fill_green
+                    elif val < 0:
+                        c.font = font_red
+                        c.fill = fill_red
+                    else:
+                        c.font = font_normal
+                        c.fill = fill_dark
+            
+            # GİP Alış
+            c = ws_ozet.cell(row=row_idx, column=5 + i * 3)
+            c.alignment = Alignment(horizontal="center")
+            c.border = border
+            
+            if not lk["has_data"]:
+                c.value = "Veri Yok"
+                c.font = font_empty
+                c.fill = fill_empty
+            else:
+                val = gip_lk["alis"].get((tarih, saat), None)
+                if val is None:
+                    c.value = "Veri Yok"
+                    c.font = font_empty
+                    c.fill = fill_empty
+                else:
+                    c.value = val
+                    c.number_format = '0.00'
+                    if val > 0:
+                        c.font = font_green
+                        c.fill = fill_green
+                    else:
+                        c.font = font_normal
+                        c.fill = fill_dark
+            
+            # --- YENİ HALİ (Bununla Değiştir) ---
+            # GİP Satış
+            c = ws_ozet.cell(row=row_idx, column=6 + i * 3)
+            c.alignment = Alignment(horizontal="center")
+            c.border = border
+
+            if not lk["has_data"]:
+             c.value = "Veri Yok"
+             c.font = font_empty
+             c.fill = fill_empty
+            else:
+               val = gip_lk["satis"].get((tarih, saat), None)
+               if val is None:
+                 c.value = "Veri Yok"
+                 c.font = font_empty
+                 c.fill = fill_empty
+               else:
+                 # Satış değerini negatif yapıyoruz
+                 neg_val = -abs(val) if val != 0 else 0
+                 c.value = neg_val 
+                 c.number_format = '-0.00;+0.00;0.00' # Negatif formatı öncelikli
+        
+                 if neg_val < 0:
+                    c.font = font_red
+                    c.fill = fill_red
+                 else:
+                    c.font = font_normal
+                    c.fill = fill_dark
+    
+    # ── Sütun genişlikleri ──
+    ws_ozet.column_dimensions["A"].width = 13
+    ws_ozet.column_dimensions["B"].width = 8
+    ws_ozet.column_dimensions["C"].width = 15
+    for i in range(n_orgs):
+        ws_ozet.column_dimensions[get_column_letter(4 + i * 3)].width = 20
+        ws_ozet.column_dimensions[get_column_letter(5 + i * 3)].width = 18
+        ws_ozet.column_dimensions[get_column_letter(6 + i * 3)].width = 18
+    
+    ws_ozet.freeze_panes = "D3"
+    
     wb.save(file_path)
     update_job(job_id, "done", "Genel Eşleşme raporu hazır!", 100, file_name)
 
