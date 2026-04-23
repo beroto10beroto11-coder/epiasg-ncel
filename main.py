@@ -69,7 +69,7 @@ GOP_ORGANIZASYONLAR = [
     {"organizationId": 100760, "shortName": "SKYPOWER"},
     {"organizationId": 9968,"shortName": "PURE ENER."},
     {"organizationId": 100040,"shortName": "BIGPRO"},
-    {"organizationId": 18419,"shortName": "WHITEROCK"  }
+    {"organizationId": 18419,"shortName": "WHITEROCK"  },
     {"organizationId": 16339,"shortName": "POWERPOINT"}
 ]
 
