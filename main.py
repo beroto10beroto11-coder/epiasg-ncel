@@ -288,8 +288,8 @@ def parse_gip(items: list) -> pd.DataFrame:
             "Tarih": tarih, 
             "Saat": saat, 
             "GİP Eşleşme (MWh)": ask - bid,
-            "GİP Alış (MWh)": bid,
-            "GİP Satış (MWh)": ask
+            "GİP Alış (MWh)": ask,
+            "GİP Satış (MWh)": bid
         })
 
     if not rows:
